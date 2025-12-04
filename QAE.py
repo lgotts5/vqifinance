@@ -10,6 +10,18 @@ from qiskit.circuit.library import LinearAmplitudeFunction
 #from qiskit_aer.primitives import Sampler
 from qiskit_finance.circuit.library import LogNormalDistribution
 
+# This program estimates the value of a European call option using a quantum approach.
+# First, it models AAPL’s possible future prices using a log-normal distribution,
+# based on the stock’s current price, volatility, and expected yearly return.
+# This distribution is then encoded into a quantum circuit, where each quantum state
+# represents one possible future price and its probability. A second quantum circuit
+# applies the payoff function so the amplitude of certain states corresponds to how valuable
+# the option is in each scenario. Quantum Amplitude Estimation (QAE) is then used to measure
+# these amplitudes and produce an estimate of the option’s expected payoff and price—offering
+# a theoretical quadratic speedup compared to classical Monte Carlo simulations.
+# The program also plots the distribution and payoff so the user can visualize how the option
+# value arises from the modeled stock movements.
+
 # number of qubits to represent the uncertainty
 num_uncertainty_qubits = 3
 
@@ -75,10 +87,10 @@ num_qubits = european_call_objective.num_qubits
 european_call = QuantumCircuit(num_qubits)
 european_call.append(uncertainty_model, range(num_uncertainty_qubits))
 european_call.append(european_call_objective, range(num_qubits))
-print_line("The first plot shows the log-normal probability distribution of the simulated future"
+print("The first plot shows the log-normal probability distribution of the simulated future"
            "asset price discretized into 8 possible values. Each bar represents that the asset ends at that price at maturity."
-           "This is the first thing encoded in the circuit.")
-print_line("The second plot shows the payoff of a European call option, which is zero below the strike price and increases linearly"
+           "This is the first thing encoded in the circuit.\n")
+print("The second plot shows the payoff of a European call option, which is zero below the strike price and increases linearly"
            "above the strike")
 
 # draw the circuit
