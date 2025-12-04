@@ -102,7 +102,16 @@ y = np.maximum(0, x - strike_price)
 fig, axes = plt.subplots(1, 2, figsize=(12, 4))
 
 # Distribution plot
-axes[0].bar(uncertainty_model.values, uncertainty_model.probabilities, width=0.2)
+#axes[0].bar(uncertainty_model.values, uncertainty_model.probabilities, width=0.2)
+values = uncertainty_model.values
+probs = uncertainty_model.probabilities
+
+width = (high - low) / (2 ** num_uncertainty_qubits)
+
+axes[0].bar(values, probs, width=width)
+axes[0].set_ylim(0, max(probs) * 1.1)
+axes[0].set_xticks(values)
+axes[0].tick_params(axis='x', rotation=45)
 axes[0].set_title("Distribution of $S_T$")
 axes[0].set_xlabel("Spot Price")
 axes[0].set_ylabel("Probability")
