@@ -47,7 +47,41 @@ plt.axhline(p95, color='green', linestyle='--', label=f"95%: ${p95:.2f}")
 plt.legend()
 plt.show()
 
-print("\n--- Summary ---")
-print(f"Expected final price: ${mean_final:.2f}")
-print(f"5th percentile (pessimistic): ${p5:.2f}")
-print(f"95th percentile (optimistic): ${p95:.2f}")
+print("\n=== Monte Carlo Summary ===")
+print(f"Final Price Mean:          ${mean_final:.2f}")
+print(f"5th Percentile (Bearish):  ${p5:.2f}")
+print(f"95th Percentile (Bullish): ${p95:.2f}")
+
+# --- European Call Payoff (ATM) ---
+strike_price = S0
+payoffs = np.maximum(final_prices - strike_price, 0)
+mc_expected_payoff = payoffs.mean()
+mc_delta = np.mean(final_prices > strike_price)
+
+print("\n=== Monte Carlo Option Payoff ===")
+print(f"Strike Price (K):           ${strike_price:.2f}")
+print(f"Expected Payoff:            ${mc_expected_payoff:.2f}")
+print(f"Delta (P(S_T > K)):         {mc_delta:.4f}")
+
+
+
+# --- Parameters for QAE log-normal model (matching this Monte Carlo setup) ---
+
+T = years           # time horizon in years
+S = S0              # initial stock price
+vol = sigma         # annual volatility
+
+# If you want QAE to use the *same drift* as your Monte Carlo:
+r = mu              # historical drift (not risk-neutral)
+
+# Log-normal parameters for QAE
+mu_ln = (r - 0.5 * vol**2) * T + np.log(S)
+sigma_ln = vol * np.sqrt(T)
+
+print("\n--- Parameters for QAE model ---")
+print(f"S (spot):          {S:.4f}")
+print(f"vol (sigma):       {vol:.4f}")
+print(f"r (drift used):    {r:.4f}")
+print(f"T (years):         {T:.4f}")
+print(f"mu_ln:             {mu_ln:.6f}")
+print(f"sigma_ln:          {sigma_ln:.6f}")
