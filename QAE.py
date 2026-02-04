@@ -44,6 +44,7 @@ high = mean + 3 * stddev
 
 # construct A operator for QAE for the payoff function by
 # composing the uncertainty model and the objective
+# Creates circuit that encodes all future payoffs at once, essentially "random number generator"
 uncertainty_model = LogNormalDistribution(
     num_uncertainty_qubits, mu=mu, sigma=sigma**2, bounds=(low, high)
 )
