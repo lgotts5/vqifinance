@@ -6,9 +6,11 @@ import numpy as np
 
 from qiskit import QuantumCircuit
 from qiskit_algorithms import IterativeAmplitudeEstimation, EstimationProblem
-from qiskit.circuit.library import LinearAmplitudeFunction
+
 #from qiskit_aer.primitives import Sampler
-from qiskit_finance.circuit.library import LogNormalDistribution
+from math import comb
+from qiskit.circuit.library import StatePreparation
+
 
 # This program estimates the value of a European call option using a quantum approach.
 # First, it models AAPL’s possible future prices using a log-normal distribution,
@@ -23,31 +25,51 @@ from qiskit_finance.circuit.library import LogNormalDistribution
 # value arises from the modeled stock movements.
 
 # number of qubits to represent the uncertainty
-num_uncertainty_qubits = 3
+num_uncertainty_qubits = 6
 
-# parameters for considered random distribution
-S = 280.4559  # initial spot price
-vol = 0.2598  # volatility of 40%
-r = 0.2223  # annual interest rate of 4%
-T = 1.0000  # 40 days to maturity
+# parameters for considered random distribution, These are what change the option
+S = 100  #
+vol = 0.2  #
+r = 0.05  #
+T = 1.0000  #
 
-# resulting parameters for log-normal distribution
-mu = (r - 0.5 * vol**2) * T + np.log(S)
-sigma = vol * np.sqrt(T)
-mean = np.exp(mu + sigma**2 / 2)
-variance = (np.exp(sigma**2) - 1) * np.exp(2 * mu + sigma**2)
-stddev = np.sqrt(variance)
 
-# lowest and highest value considered for the spot price; in between, an equidistant discretization is considered.
-low = np.maximum(0, mean - 3 * stddev)
-high = mean + 3 * stddev
+# ---------------- BINOMIAL (CRR) UNCERTAINTY MODEL ----------------
+# Choose number of binomial steps N to match the number of basis states.
+# With n uncertainty qubits, you have 2^n states. We'll use N = 2^n - 1 steps so j=0..N fits exactly.
+N = (2 ** num_uncertainty_qubits) - 1
+dt = T / N
 
+u = np.exp(vol * np.sqrt(dt))
+d = 1.0 / u
+
+q = (np.exp(r * dt) - d) / (u - d)  # risk-neutral up probability
+if not (0.0 <= q <= 1.0):
+    raise ValueError(f"Risk-neutral prob q out of [0,1]: q={q}. Check inputs.")
+
+# j = number of up moves at maturity (0..N)
+j = np.arange(N + 1)
+
+# Terminal prices for each j
+S_T = S * (u ** j) * (d ** (N - j))
+
+# Binomial probabilities for each j
+probs = np.array([comb(N, int(k)) * (q ** k) * ((1 - q) ** (N - k)) for k in j], dtype=float)
+probs /= probs.sum()
+
+# Create state |psi> = sum_j sqrt(p_j) |j>
+amps = np.sqrt(probs).astype(float)
+uncertainty_model = StatePreparation(amps, normalize=True)
+uncertainty_model.label = "BinomialDist"
+
+# In this approach, the uncertainty register represents j in [0, N]
+domain_low = 0.0
+domain_high = float(N)
+# -----------------------------------------------------------------
 # construct A operator for QAE for the payoff function by
 # composing the uncertainty model and the objective
 # Creates circuit that encodes all future payoffs at once, essentially "random number generator"
-uncertainty_model = LogNormalDistribution(
-    num_uncertainty_qubits, mu=mu, sigma=sigma**2, bounds=(low, high)
-)
+
 
 # plot probability distribution
 #x = uncertainty_model.values
@@ -59,35 +81,42 @@ uncertainty_model = LogNormalDistribution(
 #plt.xlabel("Spot Price at Maturity $S_T$ (\$)", size=15)
 #plt.ylabel("Probability ($\%$)", size=15)
 #plt.show()
-
-# set the strike price (should be within the low and the high value of the uncertainty)
 strike_price = S
+payoff_vals = np.maximum(0.0, S_T - strike_price)
 
-# set the approximation scaling for the payoff function
-c_approx = 0.25
+# ---------------- DIRECT AMPLITUDE ENCODING (NO LinearAmplitudeFunction) ----------------
+# We want QAE to estimate:
+#   a = E[ payoff / max_payoff ]  where payoff = max(S_T - K, 0)
+# Then: expected_payoff = a * max_payoff, price = exp(-rT) * expected_payoff
 
-# setup piecewise linear objective fcuntion
-breakpoints = sorted([low, strike_price])
-slopes = [0, 1]
-offsets = [0, 0]
-f_min = 0
-f_max = high - strike_price
-european_call_objective = LinearAmplitudeFunction(
-    num_uncertainty_qubits,
-    slopes,
-    offsets,
-    domain=(low, high),
-    image=(f_min, f_max),
-    breakpoints=breakpoints,
-    rescaling_factor=c_approx,
-)
+max_payoff = float(payoff_vals.max())
+if max_payoff <= 0:
+    raise ValueError("max_payoff is 0; option is never ITM on this grid.")
 
-# construct A operator for QAE for the payoff function by
-# composing the uncertainty model and the objective
-num_qubits = european_call_objective.num_qubits
+ratios = payoff_vals / max_payoff  # in [0,1]
+
+# Build amplitude vector for |j>|b>, where b is payoff indicator qubit.
+# For each j:
+#   amp(|j,0>) = sqrt(p_j * (1 - ratio_j))
+#   amp(|j,1>) = sqrt(p_j * ratio_j)
+combined = []
+for pj, fj in zip(probs, ratios):
+    combined.append(np.sqrt(pj * (1.0 - float(fj))))  # |j,0>
+    combined.append(np.sqrt(pj * float(fj)))          # |j,1>
+
+combined = np.array(combined, dtype=float)
+combined /= np.linalg.norm(combined)
+
+# Total qubits = uncertainty qubits + 1 payoff qubit
+num_qubits = num_uncertainty_qubits + 1
+
+# State preparation for full system
 european_call = QuantumCircuit(num_qubits)
-european_call.append(uncertainty_model, range(num_uncertainty_qubits))
-european_call.append(european_call_objective, range(num_qubits))
+european_call.append(StatePreparation(combined, normalize=True), range(num_qubits))
+
+# Objective qubit is the LAST qubit (the payoff indicator)
+objective_qubit = 0
+# -------------------------------------------------------------------
 print("The first plot shows the log-normal probability distribution of the simulated future"
            "asset price discretized into 8 possible values. Each bar represents that the asset ends at that price at maturity."
            "This is the first thing encoded in the circuit.\n")
@@ -99,42 +128,26 @@ print("This circuit loads the possible future prices and applies the call-option
       "payoff so the quantum algorithm can estimate the option’s value.")
 print(european_call.draw(output='text'))
 
-# plot exact payoff function (evaluated on the grid of the uncertainty model)
-x = uncertainty_model.values
-y = np.maximum(0, x - strike_price)
-#plt.plot(x, y, "ro-")
-#plt.grid()
-#plt.title("Payoff Function", size=15)
-#plt.xlabel("Spot Price", size=15)
-#plt.ylabel("Payoff", size=15)
-#plt.xticks(x, size=15, rotation=90)
-#plt.yticks(size=15)
-#plt.show()
+# ---------------- BINOMIAL PLOTS ----------------
 
-# ---- Better side-by-side plots ----
+# x-axis = terminal stock prices
+values = S_T
+probabilities = probs
+payoff = payoff_vals
+
 fig, axes = plt.subplots(1, 2, figsize=(12, 4))
 
 # Distribution plot
-#axes[0].bar(uncertainty_model.values, uncertainty_model.probabilities, width=0.2)
-values = uncertainty_model.values
-probs = uncertainty_model.probabilities
-
-width = (high - low) / (2 ** num_uncertainty_qubits)
-
-axes[0].bar(values, probs, width=width)
-axes[0].set_ylim(0, max(probs) * 1.1)
-axes[0].set_xticks(values)
-axes[0].tick_params(axis='x', rotation=45)
-axes[0].set_title("Distribution of $S_T$")
-axes[0].set_xlabel("Spot Price")
+axes[0].bar(values, probabilities)
+axes[0].set_title("Binomial Distribution of $S_T$")
+axes[0].set_xlabel("Terminal Spot Price")
 axes[0].set_ylabel("Probability")
 axes[0].grid(True)
 
 # Payoff plot
-payoff = np.maximum(0, uncertainty_model.values - strike_price)
-axes[1].plot(uncertainty_model.values, payoff, "ro-")
+axes[1].plot(values, payoff, "ro-")
 axes[1].set_title("Payoff: max($S_T$ - K, 0)")
-axes[1].set_xlabel("Spot Price")
+axes[1].set_xlabel("Terminal Spot Price")
 axes[1].set_ylabel("Payoff")
 axes[1].grid(True)
 
@@ -142,20 +155,19 @@ plt.tight_layout()
 plt.show()
 
 # evaluate exact expected value (normalized to the [0, 1] interval)
-exact_value = np.dot(uncertainty_model.probabilities, y)
-exact_delta = sum(uncertainty_model.probabilities[x >= strike_price])
-print("exact expected payoff.:\t%.4f" % exact_value)
-print("exact delta value:   \t%.4f" % exact_delta)
+exact_value = float(np.dot(probs, payoff_vals))  # expected payoff at maturity
+exact_price = float(np.exp(-r * T) * exact_value)
+
+print("Exact binomial expected payoff:\t%.6f" % exact_value)
+print("Exact binomial price:\t\t%.6f" % exact_price)
 
 
 # set target precision and confidence level
 epsilon = 0.01
 alpha = 0.05
-
 problem = EstimationProblem(
     state_preparation=european_call,
-    objective_qubits=[3],
-    post_processing=european_call_objective.post_processing,
+    objective_qubits=[objective_qubit],
 )
 # construct amplitude estimation
 ae = IterativeAmplitudeEstimation(
@@ -166,19 +178,27 @@ ae = IterativeAmplitudeEstimation(
 result = ae.estimate(problem) #!!!!
 discount_factor = np.exp(-r * T)
 # --- Quantum Amplitude Estimation Results ---
-estimated_payoff = result.estimation_processed
-estimated_price  = discount_factor * estimated_payoff
-estimated_delta = estimated_payoff / (f_max * c_approx)   # optional scaling depending on encoding
+result = ae.estimate(problem)
 
+discount_factor = np.exp(-r * T)
 
-conf_int_payoff  = np.array(result.confidence_interval_processed)
-conf_int_price   = discount_factor * conf_int_payoff
+# Raw amplitude estimate a in [0,1]
+a_hat = float(result.estimation)
+ci = np.array(result.confidence_interval, dtype=float)
+
+estimated_payoff = a_hat * max_payoff
+estimated_price = discount_factor * estimated_payoff
+
+conf_int_payoff = ci * max_payoff
+conf_int_price = discount_factor * conf_int_payoff
 
 print("\n=== Quantum Amplitude Estimation (QAE) ===")
+print(f"Raw amplitude a:      {a_hat: .6f}")
 print(f"Estimated Payoff:     {estimated_payoff: .6f}")
 print(f"Estimated Price:      {estimated_price: .6f}")
-print(f"Estimated Delta:        {estimated_delta: .6f}")
 print(f"Confidence Interval:  [{conf_int_price[0]: .6f}, {conf_int_price[1]: .6f}]")
+
+
 
 
 
