@@ -119,6 +119,8 @@ def print_qae_results(a_hat, ci, max_payoff, classical_price, label, discount):
 #
 #  QUANTUM ADVANTAGE: Real. QAE independently prices the option
 #  without any classical pre-computation of the answer.
+#
+# This is comparing against binomial lattice with 63 steps(only needs to use terminal layer).
 # ─────────────────────────────────────────────────────────────
 def price_european(call: bool):
     label    = f"European {'Call' if call else 'Put'}"
@@ -195,6 +197,10 @@ def price_european(call: bool):
 #  American pricer would require fault-tolerant quantum hardware
 #  with enough qubits to run repeated QAE calls across all
 #  exercise dates without classical pre-computation.
+#
+# This is doing binomial lattice with 63 steps. For non-dividend paying
+# stocks this gives the same answer as the european options
+#
 # ─────────────────────────────────────────────────────────────
 def price_american(call: bool):
     label     = f"American {'Call' if call else 'Put'}"

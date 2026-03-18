@@ -94,7 +94,7 @@ print('2b. Ex-dividend date before expiration date')
 print()
 # known dollar dividends may have ex-dividend date before the expiration of the option contracts.
 # not a perfect approximation
-div_asset_1_b = pyop3.binomial_tree(300, 0.08, 0.3333, N = 8, sigma = 0.30, div = 30, ex_div_step = 4)
+div_asset_1_b = pyop3.binomial_tree(100, 0.05, 1, N = 8, sigma = 0.20, div = 30, ex_div_step = 4)
 unit_asset = pyop3.binomial_tree(1, 0.08, 0.3333, N = 8, sigma = 0.30)
 div_asset_1_b.underlying_asset_summary()
 #pyop3.tree_planter.show_tree(div_asset_1_b.underlying_asset_tree(), \
@@ -104,6 +104,14 @@ div_asset_1_b.underlying_asset_summary()
 
 # Practically, when evaluating options with dividends, we are often provided with the explicit dates.
 # When provided with ex_div_date, user needs to define parameter freq_by of the pyop3.binomial_tree object as 'days' instead of N
+my_european_option2 = pyop3.european_option(div_asset_1_b, 100)
+# To calculate call value, we need to first run the .call() method of the option object
+my_european_option2.call()
+print("call value")
+print(my_european_option2.call_value)
+
+# Calculate call and put option values using fast method
+print(my_european_option2.fast_put_call())
 
 #2.c. Ex-dividend date before expiration date, given spot date, expiration date, ex-div date
 print('Ex-dividend date before expiration date, given spot date, expiration date, ex-div date')
