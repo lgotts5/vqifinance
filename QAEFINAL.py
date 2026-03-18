@@ -84,6 +84,8 @@ def run_qae(probs, payoff_vals):
     problem = EstimationProblem(state_preparation=circuit, objective_qubits=[0])
     ae      = IterativeAmplitudeEstimation(epsilon_target=EPSILON, alpha=ALPHA)
     result  = ae.estimate(problem)
+    print(f"  Number of iterations  : {len(result.powers)}")
+    print(f"  Shots per iteration   : {result.shots}")
 
     a_hat = float(result.estimation)
     ci    = np.array(result.confidence_interval, dtype=float)
@@ -101,6 +103,8 @@ def print_qae_results(a_hat, ci, max_payoff, classical_price, label, discount):
     print(f"  QAE raw amplitude a       : {a_hat:.6f}")
     print(f"  95% CI (price)            : [${ci_price[0]:.4f},  ${ci_price[1]:.4f}]")
     print(f"{'=' * 55}")
+
+
 
 
 # ─────────────────────────────────────────────────────────────
@@ -168,6 +172,16 @@ def price_european(call: bool):
     axes[1].grid(True, alpha=0.4)
     plt.tight_layout()
     plt.show()
+
+    # Circuit and QAE metrics
+    from qiskit.compiler import transpile
+    transpiled  = transpile(circuit, basis_gates=['u', 'cx'], optimization_level=0)
+    ops         = transpiled.count_ops()
+    total_gates = sum(ops.values())
+    print(f"  Qubits                : {circuit.num_qubits}")
+    print(f"  Single qubit gates (u): {ops.get('u', 0)}")
+    print(f"  Two qubit gates (cx)  : {ops.get('cx', 0)}")
+    print(f"  Total gates           : {total_gates}")
 
 
 # ─────────────────────────────────────────────────────────────
