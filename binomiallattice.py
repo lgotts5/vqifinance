@@ -27,15 +27,15 @@ print(asset_1_tree)
 #uncomment below to see graph
 pyop3.tree_planter.show_tree(asset_1_tree, "Binomial Tree Price Development of Underlying Asset")
 
-my_european_option = pyop3.european_option(asset_1, strike)
+my_american_option = pyop3.american_option(asset_1, strike)
 
 # To calculate call value, we need to first run the .call() method of the option object
-my_european_option.call()
+my_american_option.call()
 print("call value")
-print(my_european_option.call_value)
+print(my_american_option.call_value)
 
 # Calculate call and put option values using fast method
-print(my_european_option.fast_put_call())
+#print(my_american_option.fast_put_call())
 
 #visualize the call tree
 #pyop3.tree_planter.show_tree(my_european_option.call_option, \
@@ -86,7 +86,7 @@ div_asset_1_options.call()
 #pyop3.tree_planter.show_tree(div_asset_1_options.call_option, \
                              #"Binomial Tree Price Development of Call Option on Dividend-paying Stock at N = 4")
 
-print('Call option of asset 1 without dividend: ${:.2f}'.format(my_european_option.call_value))
+#print('Call option of asset 1 without dividend: ${:.2f}'.format(my_european_option.call_value))
 print('Call option of asset 1 with dividend: ${:.2f}'.format(div_asset_1_options.call_value))
 
 #2.b. Ex-dividend date before expiration date
