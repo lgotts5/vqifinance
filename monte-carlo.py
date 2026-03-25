@@ -85,3 +85,6 @@ print(f"r (drift used):    {r:.4f}")
 print(f"T (years):         {T:.4f}")
 print(f"mu_ln:             {mu_ln:.6f}")
 print(f"sigma_ln:          {sigma_ln:.6f}")
+
+from qiskit_finance.circuit.library import EuropeanCallPricingObjective
+help(EuropeanCallPricingObjective.__init__)
