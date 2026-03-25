@@ -401,9 +401,11 @@ def price_asian(call: bool, backend, sampler):
     )
 
     # ── Compose full circuit ──────────────────────────────────
-    # Total qubits: adder circuit qubits + 1 objective qubit
+    # asian_objective.num_qubits = num_sum_qubits + internal ancilla
+    # Total circuit qubits: adder qubits + extra ancilla from objective
     total_qubits = adder.num_qubits
-    full_circuit = QuantumCircuit(total_qubits + 1)
+    extra        = asian_objective.num_qubits - num_sum_qubits
+    full_circuit = QuantumCircuit(total_qubits + extra)
 
     # Load each time step distribution into its register
     for i, model in enumerate(uncertainty_models):
@@ -416,10 +418,16 @@ def price_asian(call: bool, backend, sampler):
     # Apply WeightedAdder across all uncertainty registers
     full_circuit.append(adder, range(total_qubits))
 
-    # Apply payoff objective to sum register + objective qubit
-    sum_start  = total_uncertainty_qubits
-    sum_qubits = list(range(sum_start, sum_start + num_sum_qubits))
-    full_circuit.append(asian_objective, sum_qubits + [total_qubits])
+    # Apply payoff objective starting at the sum register position
+    # objective needs exactly asian_objective.num_qubits qubits
+    obj_qubits = list(range(
+        total_uncertainty_qubits,
+        total_uncertainty_qubits + asian_objective.num_qubits
+    ))
+    full_circuit.append(asian_objective, obj_qubits)
+
+    # ── Circuit metrics before submission ────────────────────
+    print_circuit_metrics(full_circuit, backend)
 
     # ── Circuit metrics before submission ────────────────────
     print_circuit_metrics(full_circuit, backend)
