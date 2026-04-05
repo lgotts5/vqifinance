@@ -65,7 +65,7 @@ from math import comb
 from qiskit import QuantumCircuit
 from qiskit.compiler import transpile
 from qiskit.circuit.library import WeightedAdder
-from qiskit.primitives import BackendSamplerV2
+from qiskit.primitives import BackendSamplerV2, StatevectorSampler
 from qiskit_algorithms import IterativeAmplitudeEstimation, EstimationProblem
 from qiskit_ionq import IonQProvider
 
@@ -77,12 +77,12 @@ from qiskit_finance.circuit.library import EuropeanCallPricingObjective
 #  IONQ CONNECTION
 #  Set your IonQ API token here or as environment variable IONQ_API_KEY
 # ─────────────────────────────────────────────────────────────
-IONQ_API_TOKEN = os.environ.get("IONQ_API_KEY", "YOUR_IONQ_API_TOKEN_HERE")
+provider = IonQProvider(token=os.getenv("IONQ_API_KEY"))
 
 # Backend options:
 #   "ionq_qpu"        — real IonQ hardware (Forte or available device)
 #   "ionq_simulator"  — IonQ cloud simulator (costs credits, for testing)
-BACKEND_NAME = "ionq_qpu"
+BACKEND_NAME = "ionq_simulator"
 
 # Number of shots per circuit execution.
 # On real hardware measurement is probabilistic — more shots reduces
@@ -103,12 +103,14 @@ K   = S         # strike price (default: ATM, set to any value)
 # qubits means a shallower circuit and less error.
 # The paper uses 2 uncertainty qubits for hardware demos (4 price levels).
 # 3 qubits (8 levels) is a good balance given IonQ's high fidelity.
-NUM_UNCERTAINTY_QUBITS = 3
+    # 4 seems better for european
+NUM_UNCERTAINTY_QUBITS = 4
 
 # Asian option time steps. Each step adds a full quantum register of
 # NUM_UNCERTAINTY_QUBITS qubits. With IonQ's all-to-all connectivity
 # and high qubit count, several time steps are feasible.
 # The paper uses 2 time steps for their Asian option demos.
+    # 3 was way too much
 N_STEPS_ASIAN = 2
 
 EPSILON = 0.01      # QAE target precision
@@ -117,16 +119,29 @@ ALPHA   = 0.05      # QAE confidence level
 
 # ─────────────────────────────────────────────────────────────
 #  BACKEND SETUP
-#  Connects to IonQ via qiskit-ionq and returns the backend
-#  and a BackendSamplerV2 wrapping it for use with QAE.
-#  IonQ recommends optimization_level=1 for transpilation to
-#  avoid aggressive re-synthesis of native gates.
+#  For the IonQ simulator, StatevectorSampler runs locally and
+#  is fully compatible with qiskit_algorithms 0.4.0 IAE. The
+#  IonQ cloud simulator is also classical, so results are
+#  equivalent. For real QPU (ionq_qpu), BackendSamplerV2 with
+#  transpilation is used instead.
 # ─────────────────────────────────────────────────────────────
 def get_backend():
     print(f"\n  Connecting to IonQ backend: {BACKEND_NAME}...")
-    provider = IonQProvider(token=IONQ_API_TOKEN)
-    backend  = provider.get_backend(BACKEND_NAME)
-    sampler  = BackendSamplerV2(backend=backend, options={"default_shots": SHOTS})
+    backend = provider.get_backend(BACKEND_NAME)
+
+    if BACKEND_NAME == "ionq_simulator":
+        sampler = StatevectorSampler()
+    else:
+        original_run = backend.run
+        def _transpiling_run(circuits, **kwargs):
+            if not isinstance(circuits, list):
+                circuits = [circuits]
+            circuits = transpile(circuits, backend=backend, optimization_level=1)
+            return original_run(circuits, **kwargs)
+        backend.run = _transpiling_run
+        sampler = BackendSamplerV2(backend=backend)
+        sampler.options.default_shots = SHOTS
+
     print(f"  Connected. Shots per job: {SHOTS}")
     return backend, sampler
 
@@ -244,7 +259,7 @@ def price_european(call: bool, backend, sampler):
     # BackendSamplerV2 wraps the IonQ backend for use with QAE.
     problem = EstimationProblem(
         state_preparation = european_pricing,
-        objective_qubits  = [european_pricing.num_qubits - 1],
+        objective_qubits  = [NUM_UNCERTAINTY_QUBITS],
         post_processing   = objective.post_processing
     )
 
@@ -259,6 +274,9 @@ def price_european(call: bool, backend, sampler):
 
     print(f"  Number of iterations  : {len(result.powers)}")
     print(f"  Total oracle queries  : {result.num_oracle_queries}")
+    print(f"  DEBUG raw estimation  : {result.estimation}")
+    print(f"  DEBUG estimation_proc : {result.estimation_processed}")
+    print(f"  DEBUG CI raw          : {result.confidence_interval}")
 
     qae_call_price = discount * result.estimation_processed
     ci_raw         = np.array(result.confidence_interval_processed, dtype=float)
@@ -429,9 +447,6 @@ def price_asian(call: bool, backend, sampler):
     # ── Circuit metrics before submission ────────────────────
     print_circuit_metrics(full_circuit, backend)
 
-    # ── Circuit metrics before submission ────────────────────
-    print_circuit_metrics(full_circuit, backend)
-
     # ── Classical reference (path enumeration) ───────────────
     # Only feasible for small N_STEPS_ASIAN — used for verification
     u   = np.exp(vol * np.sqrt(dt))
@@ -468,7 +483,7 @@ def price_asian(call: bool, backend, sampler):
     # the discretized sum domain back to dollar payoff units.
     problem = EstimationProblem(
         state_preparation = full_circuit,
-        objective_qubits  = [full_circuit.num_qubits - 1],
+        objective_qubits  = [total_uncertainty_qubits + num_sum_qubits],
         post_processing   = asian_objective.post_processing
     )
 

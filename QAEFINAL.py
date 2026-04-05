@@ -19,10 +19,12 @@ from qiskit import QuantumCircuit
 from qiskit_algorithms import IterativeAmplitudeEstimation, EstimationProblem
 from qiskit.circuit.library import StatePreparation
 
+
+
 # ─────────────────────────────────────────────────────────────
 #  USER PARAMETERS  — edit these to change the option
 # ─────────────────────────────────────────────────────────────
-S           = 100       # current stock price ($)
+S           = 100      # current stock price ($)
 vol         = 0.2       # annualised volatility
 r           = 0.05      # risk-free rate
 T           = 1.0       # time to maturity (years)
